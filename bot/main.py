@@ -10,10 +10,17 @@ from telegram.ext import (
     CommandHandler,
     filters,
     MessageHandler,
+    PicklePersistence,
 )
 
 from bot.config import LOCAL_BOT_API_URL, TELEGRAM_BOT_TOKEN
 from bot.handlers import handle_video, start
+from bot.settings import (
+    cmd_settings,
+    cmd_set_whisper,
+    cmd_set_whisper_url,
+    cmd_set_whisper_model,
+)
 
 logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -25,7 +32,8 @@ logger = logging.getLogger(__name__)
 def main() -> None:
     logger.info("Starting Telegram subtitle bot...")
 
-    builder = Application.builder().token(TELEGRAM_BOT_TOKEN)
+    persistence = PicklePersistence(filepath="bot_persistence.pkl")
+    builder = Application.builder().token(TELEGRAM_BOT_TOKEN).persistence(persistence)
     if LOCAL_BOT_API_URL:
         # Remote Bot API server: raises download limit from 20 MB to 2 GB.
         # Do NOT use local_mode(True) — that's only for when the server runs on
@@ -41,6 +49,10 @@ def main() -> None:
     app = builder.build()
 
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("settings",          cmd_settings))
+    app.add_handler(CommandHandler("set_whisper",       cmd_set_whisper))
+    app.add_handler(CommandHandler("set_whisper_url",   cmd_set_whisper_url))
+    app.add_handler(CommandHandler("set_whisper_model", cmd_set_whisper_model))
 
     # Accept both compressed video messages and video files sent as documents
     video_filter = filters.VIDEO | (filters.Document.VIDEO)

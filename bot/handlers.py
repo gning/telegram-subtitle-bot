@@ -30,6 +30,7 @@ from telegram.ext import ContextTypes
 from bot import config
 from bot import subtitle, transcriber, translator, video
 from bot.config import LOCAL_BOT_API_URL, TELEGRAM_BOT_TOKEN
+from bot.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -158,7 +159,8 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             await _edit(status_msg, "Transcribing speech... (this may take a while)")
             t0 = time.monotonic()
             try:
-                segments, source_lang = await transcriber.transcribe(audio_path)
+                user_settings = get_settings(context.user_data)
+                segments, source_lang = await transcriber.transcribe(audio_path, settings=user_settings)
             except Exception as exc:
                 logger.exception("Transcription failed: %s", exc)
                 await _edit(status_msg, f"Transcription failed: {exc}")

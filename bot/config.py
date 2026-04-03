@@ -14,5 +14,8 @@ OPENROUTER_MODEL: str = os.getenv("OPENROUTER_MODEL", "google/gemini-2.0-flash-0
 WHISPER_MODEL_SIZE: str = os.getenv("WHISPER_MODEL_SIZE", "large-v3")
 WHISPER_DEVICE: str = os.getenv("WHISPER_DEVICE", "auto")
 WHISPER_COMPUTE_TYPE: str = os.getenv("WHISPER_COMPUTE_TYPE", "float16")
+WHISPER_BACKEND: str = os.getenv("WHISPER_BACKEND", "local")   # "local" | "api"
+WHISPER_API_URL: str = os.getenv("WHISPER_API_URL", "http://localhost:11434")
+WHISPER_API_MODEL: str = os.getenv("WHISPER_API_MODEL", "karanchopda333/whisper")
 
 MAX_VIDEO_DURATION_SECONDS: int = int(os.getenv("MAX_VIDEO_DURATION_SECONDS", "600"))
