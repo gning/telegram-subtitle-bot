@@ -6,6 +6,7 @@
 
 # Python
 __pycache__/
+bot_persistence.pkl
 *.py[cod]
 *.pyo
 *.pyd

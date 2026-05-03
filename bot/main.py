@@ -20,6 +20,9 @@ from bot.settings import (
     cmd_set_whisper,
     cmd_set_whisper_url,
     cmd_set_whisper_model,
+    cmd_set_translation,
+    cmd_set_translation_url,
+    cmd_set_translation_model,
 )
 
 logging.basicConfig(
@@ -49,10 +52,13 @@ def main() -> None:
     app = builder.build()
 
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("settings",          cmd_settings))
-    app.add_handler(CommandHandler("set_whisper",       cmd_set_whisper))
-    app.add_handler(CommandHandler("set_whisper_url",   cmd_set_whisper_url))
-    app.add_handler(CommandHandler("set_whisper_model", cmd_set_whisper_model))
+    app.add_handler(CommandHandler("settings",              cmd_settings))
+    app.add_handler(CommandHandler("set_whisper",           cmd_set_whisper))
+    app.add_handler(CommandHandler("set_whisper_url",       cmd_set_whisper_url))
+    app.add_handler(CommandHandler("set_whisper_model",     cmd_set_whisper_model))
+    app.add_handler(CommandHandler("set_translation",       cmd_set_translation))
+    app.add_handler(CommandHandler("set_translation_url",   cmd_set_translation_url))
+    app.add_handler(CommandHandler("set_translation_model", cmd_set_translation_model))
 
     # Accept both compressed video messages and video files sent as documents
     video_filter = filters.VIDEO | (filters.Document.VIDEO)

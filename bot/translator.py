@@ -16,7 +16,13 @@ import logging
 
 import httpx
 
-from bot.config import OPENROUTER_API_KEY, OPENROUTER_MODEL
+from bot.config import (
+    OPENROUTER_API_KEY,
+    OPENROUTER_MODEL,
+    TRANSLATION_BACKEND,
+    OLLAMA_BASE_URL,
+    OLLAMA_TRANSLATION_MODEL,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +54,11 @@ def _language_display(code: str) -> str:
 # Public API
 # ---------------------------------------------------------------------------
 
-async def translate_segments(segments: list[dict], target_language: str) -> list[str]:
+async def translate_segments(
+    segments: list[dict],
+    target_language: str,
+    settings: dict | None = None,
+) -> list[str]:
     """
     Translate the text of each segment to *target_language* (e.g. "English",
     "Simplified Chinese").  Returns a list of translated strings in the same
@@ -58,12 +68,15 @@ async def translate_segments(segments: list[dict], target_language: str) -> list
     results: list[str] = []
     for i in range(0, len(texts), _BATCH_SIZE):
         batch = texts[i : i + _BATCH_SIZE]
-        translated = await _translate_batch_single(batch, target_language)
+        translated = await _translate_batch_single(batch, target_language, settings)
         results.extend(translated)
     return results
 
 
-async def translate_segments_dual(segments: list[dict]) -> list[dict]:
+async def translate_segments_dual(
+    segments: list[dict],
+    settings: dict | None = None,
+) -> list[dict]:
     """
     Translate each segment to both Simplified Chinese and English.
     Returns list of {"zh": str, "en": str} dicts.
@@ -72,7 +85,7 @@ async def translate_segments_dual(segments: list[dict]) -> list[dict]:
     results: list[dict] = []
     for i in range(0, len(texts), _BATCH_SIZE):
         batch = texts[i : i + _BATCH_SIZE]
-        translated = await _translate_batch_dual(batch)
+        translated = await _translate_batch_dual(batch, settings)
         results.extend(translated)
     return results
 
@@ -81,10 +94,12 @@ async def translate_segments_dual(segments: list[dict]) -> list[dict]:
 # Internal helpers
 # ---------------------------------------------------------------------------
 
-async def _translate_batch_single(texts: list[str], target_language: str) -> list[str]:
+async def _translate_batch_single(
+    texts: list[str], target_language: str, settings: dict | None
+) -> list[str]:
     for attempt in range(_MAX_RETRIES):
         try:
-            return await _call_single(texts, target_language)
+            return await _call_single(texts, target_language, settings)
         except Exception as exc:
             if attempt == _MAX_RETRIES - 1:
                 raise
@@ -100,10 +115,10 @@ async def _translate_batch_single(texts: list[str], target_language: str) -> lis
     raise RuntimeError("Translation failed after all retries")  # unreachable
 
 
-async def _translate_batch_dual(texts: list[str]) -> list[dict]:
+async def _translate_batch_dual(texts: list[str], settings: dict | None) -> list[dict]:
     for attempt in range(_MAX_RETRIES):
         try:
-            return await _call_dual(texts)
+            return await _call_dual(texts, settings)
         except Exception as exc:
             if attempt == _MAX_RETRIES - 1:
                 raise
@@ -119,7 +134,7 @@ async def _translate_batch_dual(texts: list[str]) -> list[dict]:
     raise RuntimeError("Dual translation failed after all retries")  # unreachable
 
 
-async def _call_single(texts: list[str], target_language: str) -> list[str]:
+async def _call_single(texts: list[str], target_language: str, settings: dict | None) -> list[str]:
     system_prompt = (
         f"You are a subtitle translator. Translate the following subtitle texts to {target_language}. "
         "Return ONLY a valid JSON object in this exact format: "
@@ -129,11 +144,11 @@ async def _call_single(texts: list[str], target_language: str) -> list[str]:
     )
     user_content = json.dumps(texts, ensure_ascii=False)
 
-    data = await _post(system_prompt, user_content)
+    data = await _post(system_prompt, user_content, settings)
     return _extract_translations_single(data, len(texts))
 
 
-async def _call_dual(texts: list[str]) -> list[dict]:
+async def _call_dual(texts: list[str], settings: dict | None) -> list[dict]:
     system_prompt = (
         "You are a subtitle translator. Translate the following subtitle texts to both "
         "Simplified Chinese and English. "
@@ -144,20 +159,34 @@ async def _call_dual(texts: list[str]) -> list[dict]:
     )
     user_content = json.dumps(texts, ensure_ascii=False)
 
-    data = await _post(system_prompt, user_content)
+    data = await _post(system_prompt, user_content, settings)
     return _extract_translations_dual(data, len(texts))
 
 
-async def _post(system_prompt: str, user_content: str) -> dict:
-    async with httpx.AsyncClient(timeout=90.0) as client:
+async def _post(system_prompt: str, user_content: str, settings: dict | None) -> dict:
+    s = settings or {}
+    backend = s.get("translation_backend", TRANSLATION_BACKEND)
+
+    if backend == "ollama":
+        base_url = s.get("translation_url", OLLAMA_BASE_URL)
+        model = s.get("translation_model", OLLAMA_TRANSLATION_MODEL)
+        url = f"{base_url.rstrip('/')}/v1/chat/completions"
+        headers = {"Content-Type": "application/json"}
+    else:
+        model = OPENROUTER_MODEL
+        url = _OPENROUTER_URL
+        headers = {
+            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+            "Content-Type": "application/json",
+        }
+
+    logger.info("Translating via %s (model=%s)", backend, model)
+    async with httpx.AsyncClient(timeout=180.0) as client:
         response = await client.post(
-            _OPENROUTER_URL,
-            headers={
-                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-                "Content-Type": "application/json",
-            },
+            url,
+            headers=headers,
             json={
-                "model": OPENROUTER_MODEL,
+                "model": model,
                 "messages": [
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_content},

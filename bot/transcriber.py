@@ -153,8 +153,24 @@ async def _transcribe_api(
         ) from exc
 
     data = response.json()
+    logger.debug("Whisper API raw response keys: %s", list(data.keys()))
     language = data.get("language", "und")
-    segments = _parse_api_segments(data.get("segments", []), audio_path)
+    raw_segments = data.get("segments", [])
+
+    # Some Whisper API backends (e.g. Ollama) return only a top-level "text"
+    # field with no "segments" array.  Fall back to a single segment so the
+    # rest of the pipeline receives something to work with.
+    if not raw_segments:
+        full_text = (data.get("text") or "").strip()
+        logger.warning(
+            "Whisper API returned no segments (keys=%s). full_text present: %s",
+            list(data.keys()),
+            bool(full_text),
+        )
+        if full_text:
+            raw_segments = [{"start": 0.0, "end": 0.0, "text": full_text}]
+
+    segments = _parse_api_segments(raw_segments, audio_path)
     logger.info("API transcribed %d segments; detected language: %s", len(segments), language)
     return segments, language
 

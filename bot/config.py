@@ -18,4 +18,8 @@ WHISPER_BACKEND: str = os.getenv("WHISPER_BACKEND", "local")   # "local" | "api"
 WHISPER_API_URL: str = os.getenv("WHISPER_API_URL", "http://localhost:11434")
 WHISPER_API_MODEL: str = os.getenv("WHISPER_API_MODEL", "karanchopda333/whisper")
 
-MAX_VIDEO_DURATION_SECONDS: int = int(os.getenv("MAX_VIDEO_DURATION_SECONDS", "600"))
+TRANSLATION_BACKEND: str = os.getenv("TRANSLATION_BACKEND", "openrouter")  # "openrouter" | "ollama"
+OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
+OLLAMA_TRANSLATION_MODEL: str = os.getenv("OLLAMA_TRANSLATION_MODEL", "gemma4:31b")
+
+MAX_VIDEO_DURATION_SECONDS: int = int(os.getenv("MAX_VIDEO_DURATION_SECONDS", "0"))  # 0 = unlimited

@@ -50,7 +50,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "  2. Translate it to the other language\n"
         "  3. Burn bilingual subtitles into the video\n"
         "  4. Send the result back to you\n\n"
-        f"Maximum video length: {config.MAX_VIDEO_DURATION_SECONDS // 60} minutes.\n\n"
+        f"Maximum video length: {'unlimited' if config.MAX_VIDEO_DURATION_SECONDS == 0 else f'{config.MAX_VIDEO_DURATION_SECONDS // 60} minutes'}.\n\n"
         "Send a video as a file (not compressed) for best quality.",
     )
 
@@ -96,7 +96,11 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         return
 
     # Quick pre-flight duration check from Telegram metadata
-    if duration_hint is not None and duration_hint > config.MAX_VIDEO_DURATION_SECONDS:
+    if (
+        config.MAX_VIDEO_DURATION_SECONDS > 0
+        and duration_hint is not None
+        and duration_hint > config.MAX_VIDEO_DURATION_SECONDS
+    ):
         await message.reply_text(
             f"Video is too long ({duration_hint}s). "
             f"Maximum allowed duration is {config.MAX_VIDEO_DURATION_SECONDS}s "
@@ -133,7 +137,7 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                 await _edit(status_msg, "Could not read video metadata. Is this a valid video file?")
                 return
 
-            if duration > config.MAX_VIDEO_DURATION_SECONDS:
+            if config.MAX_VIDEO_DURATION_SECONDS > 0 and duration > config.MAX_VIDEO_DURATION_SECONDS:
                 await _edit(
                     status_msg,
                     f"Video is too long ({int(duration)}s). "
@@ -188,11 +192,11 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             t0 = time.monotonic()
             try:
                 if is_chinese:
-                    translations = await translator.translate_segments(segments, "English")
+                    translations = await translator.translate_segments(segments, "English", settings=user_settings)
                 elif is_english:
-                    translations = await translator.translate_segments(segments, "Simplified Chinese")
+                    translations = await translator.translate_segments(segments, "Simplified Chinese", settings=user_settings)
                 else:
-                    translations = await translator.translate_segments_dual(segments)
+                    translations = await translator.translate_segments_dual(segments, settings=user_settings)
             except Exception as exc:
                 logger.exception("Translation failed: %s", exc)
                 await _edit(status_msg, f"Translation failed: {exc}")
