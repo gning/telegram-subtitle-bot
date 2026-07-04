@@ -21,6 +21,7 @@ from bot.config import (
     OPENROUTER_API_KEY,
     OPENROUTER_MODEL,
     TRANSLATION_BACKEND,
+    TRANSLATION_CONCURRENCY,
     OLLAMA_BASE_URL,
     OLLAMA_TRANSLATION_MODEL,
 )
@@ -52,6 +53,33 @@ class TranslationResponseError(ValueError):
     """Raised when the translation provider returns unusable message content."""
 
 
+# Shared HTTP client so concurrent batches reuse connections instead of paying
+# a TLS handshake per request. Created lazily on the running event loop.
+_client: httpx.AsyncClient | None = None
+
+
+def _get_client() -> httpx.AsyncClient:
+    global _client
+    if _client is None or _client.is_closed:
+        _client = httpx.AsyncClient(timeout=180.0)
+    return _client
+
+
+async def _gather_batches(batches: list[list[str]], worker) -> list:
+    """Run *worker(batch)* over all batches with bounded concurrency,
+    preserving input order in the flattened result."""
+    semaphore = asyncio.Semaphore(TRANSLATION_CONCURRENCY)
+
+    async def _run(batch: list[str]):
+        async with semaphore:
+            return await worker(batch)
+
+    results: list = []
+    for translated in await asyncio.gather(*(_run(b) for b in batches)):
+        results.extend(translated)
+    return results
+
+
 def _language_display(code: str) -> str:
     return LANGUAGE_NAMES.get(code.lower(), code)
 
@@ -71,11 +99,10 @@ async def translate_segments(
     order as the input segments.
     """
     texts = [seg["text"] for seg in segments]
-    results: list[str] = []
-    for batch in _iter_batches(texts):
-        translated = await _translate_batch_single_adaptive(batch, target_language, settings)
-        results.extend(translated)
-    return results
+    return await _gather_batches(
+        _iter_batches(texts),
+        lambda batch: _translate_batch_single_adaptive(batch, target_language, settings),
+    )
 
 
 async def translate_segments_dual(
@@ -87,11 +114,10 @@ async def translate_segments_dual(
     Returns list of {"zh": str, "en": str} dicts.
     """
     texts = [seg["text"] for seg in segments]
-    results: list[dict] = []
-    for batch in _iter_batches(texts):
-        translated = await _translate_batch_dual_adaptive(batch, settings)
-        results.extend(translated)
-    return results
+    return await _gather_batches(
+        _iter_batches(texts),
+        lambda batch: _translate_batch_dual_adaptive(batch, settings),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -269,21 +295,20 @@ async def _post(system_prompt: str, user_content: str, settings: dict | None) ->
         }
 
     logger.info("Translating via %s (model=%s)", backend, model)
-    async with httpx.AsyncClient(timeout=180.0) as client:
-        response = await client.post(
-            url,
-            headers=headers,
-            json={
-                "model": model,
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_content},
-                ],
-                "response_format": {"type": "json_object"},
-            },
-        )
-        response.raise_for_status()
-        return response.json()
+    response = await _get_client().post(
+        url,
+        headers=headers,
+        json={
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_content},
+            ],
+            "response_format": {"type": "json_object"},
+        },
+    )
+    response.raise_for_status()
+    return response.json()
 
 
 def _extract_translations_single(data: dict, expected_count: int) -> list[str]:

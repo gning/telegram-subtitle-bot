@@ -16,9 +16,11 @@ from bot.config import (
     MLX_ASR_MODEL,
     MLX_ASR_MODEL_DIR,
     MLX_ASR_PREFILL_STEP_SIZE,
+    WHISPER_BEAM_SIZE,
     WHISPER_COMPUTE_TYPE,
     WHISPER_DEVICE,
     WHISPER_MODEL_SIZE,
+    WHISPER_VAD_FILTER,
 )
 
 # The Qwen3 MLX weights are large. On this machine the Hugging Face Xet
@@ -70,7 +72,11 @@ def _transcribe_sync(audio_path: str) -> tuple[list[dict], str]:
     Each segment is a dict with keys: start, end, text.
     """
     model = _get_model()
-    segments_iter, info = model.transcribe(audio_path, beam_size=5)
+    segments_iter, info = model.transcribe(
+        audio_path,
+        beam_size=WHISPER_BEAM_SIZE,
+        vad_filter=WHISPER_VAD_FILTER,
+    )
     logger.info("Detected language: %s (probability %.2f)", info.language, info.language_probability)
 
     segments = []

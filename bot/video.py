@@ -5,6 +5,8 @@ import os
 import shutil
 import subprocess
 
+from bot.config import FFMPEG_ENCODE_PRESET
+
 logger = logging.getLogger(__name__)
 
 
@@ -69,7 +71,9 @@ def _burn_subtitles_sync(video_path: str, ass_path: str, output_path: str) -> No
     _run_ffmpeg([
         "-i", video_path,
         "-vf", f"ass=filename={escaped}",
+        "-preset", FFMPEG_ENCODE_PRESET,
         "-c:a", "copy",
+        "-movflags", "+faststart",
         output_path,
     ])
 
