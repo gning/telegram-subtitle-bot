@@ -3,6 +3,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 from bot.config import (
     WHISPER_BACKEND, WHISPER_API_URL, WHISPER_API_MODEL,
+    MLX_ASR_MODEL,
     TRANSLATION_BACKEND, OLLAMA_BASE_URL, OLLAMA_TRANSLATION_MODEL,
 )
 
@@ -12,6 +13,7 @@ _DEFAULTS = {
     "whisper_backend": WHISPER_BACKEND,
     "whisper_api_url": WHISPER_API_URL,
     "whisper_api_model": WHISPER_API_MODEL,
+    "mlx_asr_model": MLX_ASR_MODEL,
     "translation_backend": TRANSLATION_BACKEND,
     "translation_url": OLLAMA_BASE_URL,
     "translation_model": OLLAMA_TRANSLATION_MODEL,
@@ -30,14 +32,16 @@ async def cmd_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         f"  Backend:   {s['whisper_backend']}\n"
         f"  API URL:   {s['whisper_api_url']}\n"
         f"  API Model: {s['whisper_api_model']}\n"
+        f"  MLX Model: {s['mlx_asr_model']}\n"
         "\nTranslation:\n"
         f"  Backend:   {s['translation_backend']}\n"
         f"  URL:       {s['translation_url']}\n"
         f"  Model:     {s['translation_model']}\n"
         "\nCommands:\n"
-        "  /set_whisper local|api\n"
+        "  /set_whisper local|api|mlx\n"
         "  /set_whisper_url <url>\n"
         "  /set_whisper_model <model>\n"
+        "  /set_mlx_model <model>\n"
         "  /set_translation openrouter|ollama\n"
         "  /set_translation_url <url>\n"
         "  /set_translation_model <model>"
@@ -46,8 +50,8 @@ async def cmd_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 async def cmd_set_whisper(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     args = context.args
-    if not args or args[0] not in ("local", "api"):
-        await update.message.reply_text("Usage: /set_whisper local  or  /set_whisper api")
+    if not args or args[0] not in ("local", "api", "mlx"):
+        await update.message.reply_text("Usage: /set_whisper local  or  /set_whisper api  or  /set_whisper mlx")
         return
     context.user_data.setdefault("settings", {})["whisper_backend"] = args[0]
     await update.message.reply_text(f"Whisper backend set to: {args[0]}")
@@ -68,6 +72,14 @@ async def cmd_set_whisper_model(update: Update, context: ContextTypes.DEFAULT_TY
         return
     context.user_data.setdefault("settings", {})["whisper_api_model"] = context.args[0]
     await update.message.reply_text(f"Whisper API model set to: {context.args[0]}")
+
+
+async def cmd_set_mlx_model(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not context.args:
+        await update.message.reply_text("Usage: /set_mlx_model <model>")
+        return
+    context.user_data.setdefault("settings", {})["mlx_asr_model"] = context.args[0]
+    await update.message.reply_text(f"MLX ASR model set to: {context.args[0]}")
 
 
 async def cmd_set_translation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

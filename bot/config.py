@@ -14,9 +14,14 @@ OPENROUTER_MODEL: str = os.getenv("OPENROUTER_MODEL", "google/gemini-2.0-flash-0
 WHISPER_MODEL_SIZE: str = os.getenv("WHISPER_MODEL_SIZE", "large-v3")
 WHISPER_DEVICE: str = os.getenv("WHISPER_DEVICE", "auto")
 WHISPER_COMPUTE_TYPE: str = os.getenv("WHISPER_COMPUTE_TYPE", "float16")
-WHISPER_BACKEND: str = os.getenv("WHISPER_BACKEND", "local")   # "local" | "api"
+WHISPER_BACKEND: str = os.getenv("WHISPER_BACKEND", "local")   # "local" | "api" | "mlx"
 WHISPER_API_URL: str = os.getenv("WHISPER_API_URL", "http://localhost:11434")
 WHISPER_API_MODEL: str = os.getenv("WHISPER_API_MODEL", "karanchopda333/whisper")
+MLX_ASR_MODEL: str = os.getenv("MLX_ASR_MODEL", "mlx-community/Qwen3-ASR-1.7B-8bit")
+MLX_ASR_MODEL_DIR: str = os.getenv("MLX_ASR_MODEL_DIR", "models/Qwen3-ASR-1.7B-8bit")
+MLX_ASR_CHUNK_DURATION_SECONDS: float = float(os.getenv("MLX_ASR_CHUNK_DURATION_SECONDS", "30"))
+MLX_ASR_MAX_TOKENS: int = int(os.getenv("MLX_ASR_MAX_TOKENS", "4096"))
+MLX_ASR_PREFILL_STEP_SIZE: int = int(os.getenv("MLX_ASR_PREFILL_STEP_SIZE", "512"))
 
 TRANSLATION_BACKEND: str = os.getenv("TRANSLATION_BACKEND", "openrouter")  # "openrouter" | "ollama"
 OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")

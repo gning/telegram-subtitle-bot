@@ -5,7 +5,7 @@ Workflow for each received video:
   1. Validate duration (from message metadata, then ffprobe post-download).
   2. Download to a temp directory.
   3. Extract audio with FFmpeg.
-  4. Transcribe with faster-whisper.
+  4. Transcribe speech.
   5. Detect language; translate accordingly.
   6. Generate ASS subtitle file.
   7. Burn subtitles into video with FFmpeg.

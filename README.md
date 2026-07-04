@@ -5,7 +5,7 @@ A Telegram bot that transcribes videos, translates the transcript, and returns t
 ## How it works
 
 1. Send the bot a video (or video file).
-2. The bot extracts the audio and transcribes it with [faster-whisper](https://github.com/SYSTRAN/faster-whisper).
+2. The bot extracts the audio and transcribes it with [faster-whisper](https://github.com/SYSTRAN/faster-whisper), an OpenAI-compatible Whisper API, or MLX on Apple Silicon.
 3. The transcript is translated via [OpenRouter](https://openrouter.ai/) into a second language:
    - Chinese audio → English subtitles added
    - English audio → Chinese subtitles added
@@ -19,6 +19,7 @@ A Telegram bot that transcribes videos, translates the transcript, and returns t
 - FFmpeg (with libass support) available on `PATH`, or set `FFMPEG_BIN` / `FFPROBE_BIN`
 - A [Telegram bot token](https://core.telegram.org/bots#botfather)
 - An [OpenRouter API key](https://openrouter.ai/)
+- Apple Silicon Mac for the MLX backend
 
 ## Setup
 
@@ -41,15 +42,24 @@ All configuration is done via environment variables (`.env` file).
 | `OPENROUTER_API_KEY` | Yes | — | OpenRouter API key |
 | `LOCAL_BOT_API_URL` | No | — | URL of a [local Bot API server](https://github.com/tdlib/telegram-bot-api) to lift the 20 MB download cap |
 | `OPENROUTER_MODEL` | No | `google/gemini-2.0-flash-001` | Model used for translation |
+| `WHISPER_BACKEND` | No | `local` | Transcription backend: `local`, `api`, or `mlx` |
 | `WHISPER_MODEL_SIZE` | No | `large-v3` | faster-whisper model size |
 | `WHISPER_DEVICE` | No | `auto` | `cpu`, `cuda`, or `auto` |
 | `WHISPER_COMPUTE_TYPE` | No | `float16` | Whisper compute type (e.g. `int8` for CPU) |
-| `MAX_VIDEO_DURATION_SECONDS` | No | `600` | Videos longer than this are rejected |
+| `WHISPER_API_URL` | No | `http://localhost:11434` | OpenAI-compatible audio transcription API base URL |
+| `WHISPER_API_MODEL` | No | `karanchopda333/whisper` | Model name sent to the API backend |
+| `MLX_ASR_MODEL` | No | `mlx-community/Qwen3-ASR-1.7B-8bit` | MLX ASR model used when `WHISPER_BACKEND=mlx` |
+| `MLX_ASR_MODEL_DIR` | No | `models/Qwen3-ASR-1.7B-8bit` | Pre-downloaded local MLX model directory, used before downloading from Hugging Face |
+| `MLX_ASR_CHUNK_DURATION_SECONDS` | No | `30` | Audio chunk size for MLX ASR |
+| `MLX_ASR_MAX_TOKENS` | No | `4096` | Maximum generated transcription tokens for MLX ASR |
+| `MLX_ASR_PREFILL_STEP_SIZE` | No | `512` | MLX prompt prefill step size |
+| `MAX_VIDEO_DURATION_SECONDS` | No | `0` | Videos longer than this are rejected; `0` means unlimited |
 | `FFMPEG_BIN` | No | system `ffmpeg` | Path to a custom ffmpeg binary |
 | `FFPROBE_BIN` | No | system `ffprobe` | Path to a custom ffprobe binary |
 
 ## Notes
 
 - Telegram's default Bot API limits uploads/downloads to **20 MB**. Run a [local Bot API server](https://github.com/tdlib/telegram-bot-api) and set `LOCAL_BOT_API_URL` to handle larger files.
-- The Whisper model is downloaded on first run (~3 GB for `large-v3`). Smaller models (`medium`, `small`) are faster but less accurate.
-- Whisper runs in a thread pool to avoid blocking the async event loop.
+- The faster-whisper model is downloaded on first run (~3 GB for `large-v3`). Smaller models (`medium`, `small`) are faster but less accurate.
+- The MLX model is downloaded on first use and requires `mlx-audio` on Apple Silicon. Use `/set_whisper mlx` and `/set_mlx_model mlx-community/Qwen3-ASR-1.7B-8bit` to select it per user.
+- Transcription runs in a thread pool to avoid blocking the async event loop.
