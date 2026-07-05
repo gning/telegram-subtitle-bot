@@ -1,6 +1,7 @@
 import asyncio
 import inspect
 import logging
+import math
 import os
 import shutil
 import subprocess
@@ -16,6 +17,7 @@ from bot.config import (
     MLX_ASR_MODEL,
     MLX_ASR_MODEL_DIR,
     MLX_ASR_PREFILL_STEP_SIZE,
+    WHISPER_API_KEY,
     WHISPER_BEAM_SIZE,
     WHISPER_COMPUTE_TYPE,
     WHISPER_DEVICE,
@@ -352,30 +354,107 @@ def _transcribe_mlx_sync(audio_path: str, model_name: str) -> tuple[list[dict], 
     return segments, language
 
 
+# Hosted Whisper APIs cap the request size (Groq: 25 MB free tier, 100 MB dev
+# tier). Whisper only uses 16 kHz mono audio, so upload low-bitrate Opus
+# instead of raw WAV and split anything that still exceeds the cap.
+_API_UPLOAD_BITRATE_BPS = 32_000
+_API_MAX_UPLOAD_BYTES = int(float(os.getenv("WHISPER_API_MAX_UPLOAD_MB", "24")) * 1024 * 1024)
+
+
+def _prepare_api_upload(audio_path: str) -> list[tuple[str, float]]:
+    """Compress *audio_path* to Opus chunks that fit under the API size cap.
+
+    Returns [(chunk_path, start_offset_seconds), ...] in playback order.
+    """
+    from bot.video import _get_duration_sync, _run_ffmpeg
+
+    opus_args = [
+        "-vn", "-ac", "1", "-ar", "16000",
+        "-c:a", "libopus", "-b:a", str(_API_UPLOAD_BITRATE_BPS),
+    ]
+    base = os.path.splitext(audio_path)[0]
+    duration = _get_duration_sync(audio_path)
+    # 0.9 leaves headroom for container overhead above the nominal bitrate.
+    max_chunk_seconds = _API_MAX_UPLOAD_BYTES * 8 * 0.9 / _API_UPLOAD_BITRATE_BPS
+    if duration <= max_chunk_seconds:
+        out = f"{base}.api.ogg"
+        _run_ffmpeg(["-i", audio_path, *opus_args, out])
+        return [(out, 0.0)]
+
+    count = math.ceil(duration / max_chunk_seconds)
+    chunk_seconds = duration / count
+    chunks = []
+    for i in range(count):
+        out = f"{base}.api.{i:03d}.ogg"
+        start = i * chunk_seconds
+        _run_ffmpeg([
+            "-ss", f"{start:.3f}", "-t", f"{chunk_seconds:.3f}",
+            "-i", audio_path, *opus_args, out,
+        ])
+        chunks.append((out, start))
+    return chunks
+
+
 async def _transcribe_api(
     audio_path: str,
     api_url: str,
     api_model: str,
 ) -> tuple[list[dict], str]:
     endpoint = f"{api_url.rstrip('/')}/v1/audio/transcriptions"
+    headers = {"Authorization": f"Bearer {WHISPER_API_KEY}"} if WHISPER_API_KEY else {}
+
+    loop = asyncio.get_event_loop()
+    uploads = await loop.run_in_executor(None, _prepare_api_upload, audio_path)
+    if len(uploads) > 1:
+        logger.info("Audio exceeds API upload cap; split into %d chunks", len(uploads))
+
+    segments: list[dict] = []
+    language = "und"
     try:
         async with httpx.AsyncClient(timeout=300.0, http2=False) as client:
-            with open(audio_path, "rb") as f:
-                response = await client.post(
-                    endpoint,
-                    files={"file": (Path(audio_path).name, f, "audio/wav")},
-                    data={
-                        "model": api_model,
-                        "response_format": "verbose_json",
-                        "timestamp_granularities[]": "segment",
-                    },
-                )
-            # raise_for_status inside the client context so the response
-            # is fully buffered before the connection closes.
-            if response.is_error:
-                raise RuntimeError(
-                    f"Whisper API returned HTTP {response.status_code}: {response.text[:200]}"
-                )
+            for chunk_path, offset in uploads:
+                with open(chunk_path, "rb") as f:
+                    response = await client.post(
+                        endpoint,
+                        headers=headers,
+                        files={"file": (Path(chunk_path).name, f, "audio/ogg")},
+                        data={
+                            "model": api_model,
+                            "response_format": "verbose_json",
+                            "timestamp_granularities[]": "segment",
+                        },
+                    )
+                # raise_for_status inside the client context so the response
+                # is fully buffered before the connection closes.
+                if response.is_error:
+                    raise RuntimeError(
+                        f"Whisper API returned HTTP {response.status_code}: {response.text[:200]}"
+                    )
+
+                data = response.json()
+                logger.debug("Whisper API raw response keys: %s", list(data.keys()))
+                if language == "und":
+                    language = data.get("language") or "und"
+                raw_segments = data.get("segments", [])
+
+                # Some Whisper API backends (e.g. Ollama) return only a
+                # top-level "text" field with no "segments" array.  Fall back
+                # to a single segment so the rest of the pipeline receives
+                # something to work with.
+                if not raw_segments:
+                    full_text = (data.get("text") or "").strip()
+                    logger.warning(
+                        "Whisper API returned no segments (keys=%s). full_text present: %s",
+                        list(data.keys()),
+                        bool(full_text),
+                    )
+                    if full_text:
+                        raw_segments = [{"start": 0.0, "end": 0.0, "text": full_text}]
+
+                for seg in _parse_api_segments(raw_segments, chunk_path):
+                    seg["start"] += offset
+                    seg["end"] += offset
+                    segments.append(seg)
     except RuntimeError:
         raise
     except httpx.TimeoutException as exc:
@@ -385,27 +464,8 @@ async def _transcribe_api(
             f"Whisper API connection error ({type(exc).__name__}): {exc}"
         ) from exc
 
-    data = response.json()
-    logger.debug("Whisper API raw response keys: %s", list(data.keys()))
-    language = data.get("language", "und")
-    raw_segments = data.get("segments", [])
-
-    # Some Whisper API backends (e.g. Ollama) return only a top-level "text"
-    # field with no "segments" array.  Fall back to a single segment so the
-    # rest of the pipeline receives something to work with.
-    if not raw_segments:
-        full_text = (data.get("text") or "").strip()
-        logger.warning(
-            "Whisper API returned no segments (keys=%s). full_text present: %s",
-            list(data.keys()),
-            bool(full_text),
-        )
-        if full_text:
-            raw_segments = [{"start": 0.0, "end": 0.0, "text": full_text}]
-
-    segments = _parse_api_segments(raw_segments, audio_path)
     logger.info("API transcribed %d segments; detected language: %s", len(segments), language)
-    return segments, language
+    return segments, _normalise_language_code(language)
 
 
 async def transcribe(
