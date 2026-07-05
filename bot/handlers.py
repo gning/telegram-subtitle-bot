@@ -24,7 +24,7 @@ from pathlib import Path
 import httpx
 from telegram import Message, Update
 from telegram.constants import ChatAction, ParseMode
-from telegram.error import BadRequest
+from telegram.error import BadRequest, TimedOut
 from telegram.ext import ContextTypes
 
 from bot import config
@@ -63,37 +63,23 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     message: Message = update.message
 
     # Determine which kind of media was sent
-    tg_file = None
+    media = None
     duration_hint: int | None = None  # seconds, from Telegram metadata
     original_filename: str | None = None
 
-    try:
-        if message.video:
-            tg_file = await message.video.get_file()
-            duration_hint = message.video.duration
-            original_filename = message.video.file_name
-        elif message.document:
-            mime = message.document.mime_type or ""
-            if not mime.startswith("video/"):
-                return  # not a video document, ignore
-            tg_file = await message.document.get_file()
-            original_filename = message.document.file_name
-            # Documents don't carry duration metadata; check after download
-        else:
-            return  # shouldn't happen given the filter in main.py
-    except BadRequest as exc:
-        if "too big" in str(exc).lower():
-            if LOCAL_BOT_API_URL:
-                tip = "The file exceeds the 2 GB limit even for a local Bot API server."
-            else:
-                tip = (
-                    "The hosted Telegram Bot API only allows downloading files up to 20 MB. "
-                    "Run a local Bot API server (set LOCAL_BOT_API_URL in .env) to lift this to 2 GB."
-                )
-            await message.reply_text(f"File is too large to download. {tip}")
-        else:
-            await message.reply_text(f"Could not fetch the video: {exc}")
-        return
+    if message.video:
+        media = message.video
+        duration_hint = message.video.duration
+        original_filename = message.video.file_name
+    elif message.document:
+        mime = message.document.mime_type or ""
+        if not mime.startswith("video/"):
+            return  # not a video document, ignore
+        media = message.document
+        original_filename = message.document.file_name
+        # Documents don't carry duration metadata; check after download
+    else:
+        return  # shouldn't happen given the filter in main.py
 
     # Quick pre-flight duration check from Telegram metadata
     if (
@@ -108,8 +94,35 @@ async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         )
         return
 
-    # Send initial status
-    status_msg = await message.reply_text("Downloading video...")
+    # Send initial status before getFile: on a local Bot API server, getFile
+    # blocks until the server has fetched the whole file from Telegram, which
+    # can take minutes for forwarded videos not yet cached on local disk.
+    status_msg = await message.reply_text("Fetching video from Telegram...")
+
+    try:
+        tg_file = await media.get_file(read_timeout=600)
+    except TimedOut:
+        await _edit(
+            status_msg,
+            "Timed out fetching the video from Telegram. "
+            "The file may still be transferring — please try again in a few minutes.",
+        )
+        return
+    except BadRequest as exc:
+        if "too big" in str(exc).lower():
+            if LOCAL_BOT_API_URL:
+                tip = "The file exceeds the 2 GB limit even for a local Bot API server."
+            else:
+                tip = (
+                    "The hosted Telegram Bot API only allows downloading files up to 20 MB. "
+                    "Run a local Bot API server (set LOCAL_BOT_API_URL in .env) to lift this to 2 GB."
+                )
+            await _edit(status_msg, f"File is too large to download. {tip}")
+        else:
+            await _edit(status_msg, f"Could not fetch the video: {exc}")
+        return
+
+    await _edit(status_msg, "Downloading video...")
     t_total_start = time.monotonic()
     timings: list[tuple[str, float]] = []
 
