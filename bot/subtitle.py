@@ -10,6 +10,8 @@ Layout (all cases):
 from __future__ import annotations
 
 import logging
+import math
+import unicodedata
 
 logger = logging.getLogger(__name__)
 
@@ -129,23 +131,20 @@ def generate_ass(
         if is_chinese_source:
             # Chinese original above English translation, both in bottom quarter
             translation = translations[i] if i < len(translations) else ""
-            lines.append(_dialogue(start, end, "CJKMidBottom", _escape(original)))
-            lines.append(_dialogue(start, end, "LatinBottom",  _escape(str(translation))))
+            lines.append(_dialogue(start, end, "CJKBottom", _stack_zh_en(original, str(translation))))
 
         elif is_english_source:
             # Chinese translation above English original, both in bottom quarter
             translation = translations[i] if i < len(translations) else ""
-            lines.append(_dialogue(start, end, "CJKMidBottom", _escape(str(translation))))
-            lines.append(_dialogue(start, end, "LatinBottom",  _escape(original)))
+            lines.append(_dialogue(start, end, "CJKBottom", _stack_zh_en(str(translation), original)))
 
         else:
-            # Other language: original on top, Chinese mid-bottom, English bottom
+            # Other language: original on top, Chinese above English at bottom
             pair = translations[i] if i < len(translations) else {"zh": "", "en": ""}
             zh = pair.get("zh", "") if isinstance(pair, dict) else ""
             en = pair.get("en", "") if isinstance(pair, dict) else str(pair)
-            lines.append(_dialogue(start, end, "LatinTop",     _escape(original)))
-            lines.append(_dialogue(start, end, "CJKMidBottom", _escape(zh)))
-            lines.append(_dialogue(start, end, "LatinBottom",  _escape(en)))
+            lines.append(_dialogue(start, end, "LatinTop",   _escape(original)))
+            lines.append(_dialogue(start, end, "CJKBottom", _stack_zh_en(zh, en)))
 
     content = _HEADER.format(styles=_STYLES) + "\n".join(lines) + "\n"
 
@@ -153,6 +152,69 @@ def generate_ass(
         fh.write(content)
 
     logger.info("ASS subtitle file written to %s (%d events)", output_path, len(lines))
+
+
+# Inline override switching to the Latin look mid-event (font, size, white).
+_LATIN_OVERRIDE = f"{{\\fn{_FONT_LATIN}\\fs32\\c&HFFFFFF&}}"
+
+
+def _stack_zh_en(zh: str, en: str) -> str:
+    """Combine Chinese-above-English into a single event's text.
+
+    A single event keeps the stacking order fixed: with separate events,
+    libass collision handling relocates whichever event overlaps once a
+    wrapped line grows taller than the margin gap between them.
+    """
+    zh_part = _escape(_wrap_cjk(zh)) if zh else ""
+    en_part = f"{_LATIN_OVERRIDE}{_escape(en)}" if en else ""
+    if zh_part and en_part:
+        return f"{zh_part}\\N{en_part}"
+    return zh_part or en_part
+
+
+# libass only wraps lines at spaces, so Chinese text never wraps on its own.
+# Insert explicit \N breaks, balancing the lines. Width budget: PlayResX 1280
+# minus margins ≈ 1260 px at font size 36 → ~35 full-width glyphs; use a bit
+# less for the outline and glyph-width variance.
+_CJK_MAX_LINE_UNITS = 32.0
+# Characters that must not start a line (CJK punctuation rules).
+_NO_LINE_START = "，。！？、；：）】》」』…—％℃"
+
+
+def _char_units(ch: str) -> float:
+    """Approximate display width: full-width glyphs 1.0, others 0.5."""
+    return 1.0 if unicodedata.east_asian_width(ch) in ("W", "F") else 0.5
+
+
+def _wrap_cjk(text: str, max_units: float = _CJK_MAX_LINE_UNITS) -> str:
+    """Break spaceless CJK text into balanced lines joined with \\N."""
+    total = sum(_char_units(ch) for ch in text)
+    if total <= max_units:
+        return text
+
+    line_count = math.ceil(total / max_units)
+    target = total / line_count
+    lines: list[str] = []
+    current, current_units = "", 0.0
+    for idx, ch in enumerate(text):
+        current += ch
+        current_units += _char_units(ch)
+        if current_units >= target and len(lines) < line_count - 1:
+            # Don't split inside an ASCII word (mixed CJK/Latin text).
+            nxt = text[idx + 1] if idx + 1 < len(text) else ""
+            if ch.isascii() and ch.isalnum() and nxt.isascii() and nxt.isalnum():
+                continue
+            lines.append(current)
+            current, current_units = "", 0.0
+    if current:
+        lines.append(current)
+
+    # Pull leading closing punctuation back onto the previous line.
+    for i in range(1, len(lines)):
+        while lines[i] and lines[i][0] in _NO_LINE_START:
+            lines[i - 1] += lines[i][0]
+            lines[i] = lines[i][1:]
+    return "\\N".join(line.strip() for line in lines if line.strip())
 
 
 def _escape(text: str) -> str:
