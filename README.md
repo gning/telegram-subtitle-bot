@@ -41,6 +41,14 @@ All configuration is done via environment variables (`.env` file).
 | `TELEGRAM_BOT_TOKEN` | Yes | — | Bot token from @BotFather |
 | `OPENROUTER_API_KEY` | Yes | — | OpenRouter API key |
 | `LOCAL_BOT_API_URL` | No | — | URL of a [local Bot API server](https://github.com/tdlib/telegram-bot-api) to lift the 20 MB download cap |
+| `TELEGRAM_POLL_TIMEOUT_SECONDS` | No | `10` | Bot API long-poll duration passed to `getUpdates` |
+| `TELEGRAM_GET_UPDATES_READ_TIMEOUT_SECONDS` | No | `15` | Extra HTTP read allowance added to the long-poll duration (effective default: 25s) |
+| `TELEGRAM_API_CONNECT_TIMEOUT_SECONDS` | No | `10` | Connection timeout for Telegram API calls |
+| `TELEGRAM_API_READ_TIMEOUT_SECONDS` | No | `30` | Read timeout for Telegram API calls other than polling |
+| `TELEGRAM_API_WRITE_TIMEOUT_SECONDS` | No | `30` | Write timeout for Telegram API calls |
+| `TELEGRAM_API_POOL_TIMEOUT_SECONDS` | No | `5` | Maximum wait for a free Telegram HTTP connection |
+| `TELEGRAM_API_MEDIA_WRITE_TIMEOUT_SECONDS` | No | `600` | Default socket write timeout for media uploads |
+| `TELEGRAM_POLL_WATCHDOG_TIMEOUT_SECONDS` | No | `120` | Exit with status 75 after this many seconds without a completed `getUpdates`; `0` disables it |
 | `OPENROUTER_MODEL` | No | `google/gemini-2.0-flash-001` | Model used for translation |
 | `WHISPER_BACKEND` | No | `local` | Transcription backend: `local`, `api`, or `mlx` |
 | `WHISPER_MODEL_SIZE` | No | `large-v3` | faster-whisper model size |
@@ -73,6 +81,7 @@ The processing pipeline includes several optimizations:
 ## Notes
 
 - Telegram's default Bot API limits uploads/downloads to **20 MB**. Run a [local Bot API server](https://github.com/tdlib/telegram-bot-api) and set `LOCAL_BOT_API_URL` to handle larger files.
+- The polling watchdog runs in a small native thread, so it still detects a blocked asyncio event loop. On expiry it exits with status 75; run the bot under systemd, Docker with a restart policy, or another supervisor to restart it automatically. HTTPX's per-request INFO logging is suppressed because it exposes the tokenized Bot API URL and can block polling when the log sink applies back-pressure.
 - The faster-whisper model is downloaded on first run (~3 GB for `large-v3`). Smaller models (`medium`, `small`) are faster but less accurate.
 - The MLX model is downloaded on first use and requires `mlx-audio` on Apple Silicon. Use `/set_whisper mlx` and `/set_mlx_model mlx-community/Qwen3-ASR-1.7B-8bit` to select it per user.
 - Transcription runs in a thread pool to avoid blocking the async event loop.
