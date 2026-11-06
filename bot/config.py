@@ -8,6 +8,36 @@ TELEGRAM_BOT_TOKEN: str = os.environ["TELEGRAM_BOT_TOKEN"]
 # Leave unset to use the default hosted Telegram Bot API.
 LOCAL_BOT_API_URL: str | None = os.getenv("LOCAL_BOT_API_URL")  # e.g. http://localhost:8081
 
+# Telegram Bot API transport and polling liveness. HTTPX timeouts are per
+# network operation. For getUpdates, python-telegram-bot adds the Bot API
+# long-poll timeout to TELEGRAM_GET_UPDATES_READ_TIMEOUT_SECONDS.
+TELEGRAM_POLL_TIMEOUT_SECONDS: int = int(
+    os.getenv("TELEGRAM_POLL_TIMEOUT_SECONDS", "10")
+)
+TELEGRAM_GET_UPDATES_READ_TIMEOUT_SECONDS: float = float(
+    os.getenv("TELEGRAM_GET_UPDATES_READ_TIMEOUT_SECONDS", "15")
+)
+TELEGRAM_API_CONNECT_TIMEOUT_SECONDS: float = float(
+    os.getenv("TELEGRAM_API_CONNECT_TIMEOUT_SECONDS", "10")
+)
+TELEGRAM_API_READ_TIMEOUT_SECONDS: float = float(
+    os.getenv("TELEGRAM_API_READ_TIMEOUT_SECONDS", "30")
+)
+TELEGRAM_API_WRITE_TIMEOUT_SECONDS: float = float(
+    os.getenv("TELEGRAM_API_WRITE_TIMEOUT_SECONDS", "30")
+)
+TELEGRAM_API_POOL_TIMEOUT_SECONDS: float = float(
+    os.getenv("TELEGRAM_API_POOL_TIMEOUT_SECONDS", "5")
+)
+TELEGRAM_API_MEDIA_WRITE_TIMEOUT_SECONDS: float = float(
+    os.getenv("TELEGRAM_API_MEDIA_WRITE_TIMEOUT_SECONDS", "600")
+)
+# If no getUpdates request completes within this period, exit with EX_TEMPFAIL
+# so a process supervisor can restart the bot. Set to 0 to disable.
+TELEGRAM_POLL_WATCHDOG_TIMEOUT_SECONDS: float = float(
+    os.getenv("TELEGRAM_POLL_WATCHDOG_TIMEOUT_SECONDS", "120")
+)
+
 OPENROUTER_API_KEY: str = os.environ["OPENROUTER_API_KEY"]
 OPENROUTER_MODEL: str = os.getenv("OPENROUTER_MODEL", "google/gemini-2.0-flash-001")
 
